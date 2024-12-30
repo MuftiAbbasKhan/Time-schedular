@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Professional Time Scheduler</title>
+      <style>
+        body {
+          font-family: 'Arial', sans-serif;
+          margin: 0;
+          padding: 0;
+          background: linear-gradient(to right, #4e73df 50%, #f4f4f9 50%);
+          color: #333;
+          height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .container {
+          max-width: 800px;
+          margin: auto;
+          padding: 20px;
+          background: #fff;
+          border-radius: 15px;
+          box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+          overflow: hidden;
+        }
+
+        h1, h2 {
+          text-align: left;
+          color: #4e73df;
+          margin-bottom: 20px;
+        }
+
+        form {
+          display: flex;
+          flex-direction: column;
+          gap: 15px;
+        }
+
+        input, button {
+          padding: 10px;
+          border-radius: 5px;
+          border: 1px solid #ddd;
+          font-size: 16px;
+        }
+
+        button {
+          background-color: #4e73df;
+          color: white;
+          border: none;
+          cursor: pointer;
+          transition: transform 0.3s, background-color 0.3s;
+        }
+
+        button:hover {
+          background-color: #375bce;
+          transform: scale(1.05);
+        }
+
+        ul {
+          list-style: none;
+          padding: 0;
+        }
+
+        li {
+          background: #f4f4f9;
+          padding: 15px;
+          margin: 10px 0;
+          border: 1px solid #ddd;
+          border-radius: 10px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .completed {
+          text-decoration: line-through;
+          color: #888;
+        }
+
+        .buttons {
+          display: flex;
+          gap: 10px;
+        }
+
+        .buttons button {
+          padding: 5px 15px;
+          border-radius: 5px;
+          border: none;
+          font-size: 14px;
+          cursor: pointer;
+        }
+
+        .edit-btn {
+          background-color: #ff9800;
+          color: white;
+        }
+
+        .delete-btn {
+          background-color: #f44336;
+          color: white;
+        }
+
+        .complete-btn {
+          background-color: #4CAF50;
+          color: white;
+        }
+      </style>
+
+    </head>
+    <body>
+      <div class="container">
+        <h1>Professional Time Scheduler</h1>
+
+        <!-- Form to Add Task -->
+        <form id="task-form">
+          <label for="task-name">Task:</label>
+          <input type="text" id="task-name" placeholder="Enter task name" required>
+
+          <label for="task-date">Date:</label>
+          <input type="date" id="task-date" required>
+
+          <label for="start-time">Start Time:</label>
+          <input type="time" id="start-time" required>
+
+          <label for="end-time">End Time:</label>
+          <input type="time" id="end-time" required>
+
+          <button type="submit">Add Task</button>
+        </form>
+
+        <!-- Display Tasks -->
+        <h2>Task List</h2>
+        <ul id="task-list"></ul>
+
+        <!-- Completed Tasks -->
+        <h2>Task History</h2>
+        <ul id="task-history"></ul>
+
+        <!-- Music for Notification -->
+        <audio id="task-complete-audio" src="{{ url_for('static', filename='music/ring.mp3') }}" preload="auto"></audio>
+      </div>
+
+      <script>
+        let taskAlarms = {};  // Track alarms for tasks
+
+        // Fetch and display tasks on page load
+        window.onload = async () => {
+          try {
+            const response = await fetch('/tasks');
+            const tasks = await response.json();
+            tasks.forEach(task => {
+              displayTask(task);
+              setupAudioNotification(task); // Set up the audio notification for each task
+            });
+          } catch (error) {
+            console.error('Error fetching tasks:', error);
+          }
+        };
+
+        // Setup audio notification to play exactly at the task's start time
+        function setupAudioNotification(task) {
+          const taskStartTime = new Date(`${task.date} ${task.start_time}`);
+          const now = new Date();
+
+          // Calculate the time difference in milliseconds
+          const timeDifference = taskStartTime.getTime() - now.getTime();
+
+          // If the task is more than 0 milliseconds away, set a timeout
+          if (timeDifference > 0) {
+            taskAlarms[task.id] = setTimeout(() => {
+              playAudioNotification(); // Automatically play the audio when the task starts
+            }, timeDifference); 
+          } else {
+            console.log(`Task "${task.name}" has already passed or is too soon.`);
+          }
+        }
+
+        // Function to play audio notification without alert
+        function playAudioNotification() {
+          const audioElement = document.getElementById("task-complete-audio");
+
+          // Play the ringtone when the time arrives
+          audioElement.play().catch(error => {
+            console.error("Audio playback failed:", error);
+          });
+        }
+
+        // Handle form submission to add task
+        document.getElementById("task-form").addEventListener("submit", async (e) => {
+          e.preventDefault();
+
+          const taskName = document.getElementById("task-name").value;
+          const taskDate = document.getElementById("task-date").value;
+          const startTime = document.getElementById("start-time").value;
+          const endTime = document.getElementById("end-time").value;
+
+          // Send POST request to add task
+          try {
+            const response = await fetch('/tasks', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                taskName,
+                taskDate,
+                startTime,
+                endTime
+              })
+            });
+
+            const task = await response.json();
+            displayTask(task);  // Display the newly added task
+            setupAudioNotification(task); // Set up the audio notification for the new task
+            document.getElementById("task-form").reset();  // Clear form
+          } catch (error) {
+            console.error('Error adding task:', error);
+          }
+        });
+
+        // Display a task in the list
+        function displayTask(task) {
+          const taskItem = document.createElement("li");
+          taskItem.id = `task-${task.id}`;
+          taskItem.dataset.startTime = new Date(`${task.date} ${task.start_time}`).toISOString(); // Store the start time as an ISO string
+          taskItem.innerHTML = `
+            <span>${task.name} | ${task.date} | ${task.start_time} - ${task.end_time}</span>
+            <div class="buttons">
+              <button class="complete-btn" onclick="completeTask(${task.id})">Complete</button>
+              <button class="edit-btn" onclick="editTask(${task.id})">Edit</button>
+              <button class="delete-btn" onclick="deleteTask(${task.id})">Delete</button>
+            </div>
+          `;
+          document.getElementById("task-list").appendChild(taskItem);
+        }
+
+        // Complete Task
+        async function completeTask(taskId) {
+          try {
+            const response = await fetch(`/tasks/${taskId}`, { method: 'GET' });
+            const result = await response.json();
+
+            if (result.message === "Task completed") {
+              const taskItem = document.querySelector(`#task-${taskId}`);
+              taskItem.classList.add('completed');
+              
+              // Stop audio when the task is completed
+              stopAudioNotification();
+
+              // Move task to history section
+              document.getElementById("task-history").appendChild(taskItem);
+            }
+          } catch (error) {
+            console.error('Error completing task:', error);
+          }
+        }
+
+        // Stop any ongoing audio notification
+        function stopAudioNotification() {
+          const audioElement = document.getElementById("task-complete-audio");
+          audioElement.pause();
+          audioElement.currentTime = 0;
+        }
+
+        // Delete Task from Task List and History
+        async function deleteTask(taskId) {
+          try {
+            const taskItem = document.querySelector(`#task-${taskId}`);
+            
+            // Cancel the audio alarm if it was set
+            if (taskAlarms[taskId]) {
+              clearTimeout(taskAlarms[taskId]);
+              delete taskAlarms[taskId];
+            }
+
+            // Send DELETE request to remove task from the server
+            const response = await fetch(`/tasks/${taskId}`, { method: 'DELETE' });
+            const result = await response.json();
+
+            if (result.message === "Task deleted") {
+              // Stop audio if the task was not started yet
+              stopAudioNotification();
+
+              // Hide the task item from the UI
+              taskItem.style.display = 'none'; // Hide task item smoothly
+              setTimeout(() => {
+                taskItem.remove(); // Remove the task item from DOM after a short delay
+              }, 300);  // Delay removal for smoother transition
+            }
+          } catch (error) {
+            console.error('Error deleting task:', error);
+          }
+        }
+      </script>
+    </body>
+    </html>
